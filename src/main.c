@@ -12,7 +12,7 @@ typedef struct {
 
 int real_ping(const char *ip) {
   char cmd[100];
-  snprintf(cmd, sizeof(cmd), "ping -c 4 -W 1 %s", ip);
+  snprintf(cmd, sizeof(cmd), "ping -c 3 -W 1 %s", ip);
 
   FILE *fp = popen(cmd, "r");
   if (fp == NULL) {
@@ -96,4 +96,3 @@ int main() {
   free(ip_data);
   return 0;
 }
-
