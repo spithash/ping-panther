@@ -12,13 +12,16 @@
 #define PING_COUNT 3       // Number of ping packets
 #define MAX_OUTPUT_SIZE 1024
 #define TEST_INTERVAL 3 // Interval in seconds for each IP test
+#define STAGGER_DELAY 1 // Delay between starting tests for different IPs
 
 typedef struct {
   char ip[MAX_IP_LENGTH];
   char output[MAX_OUTPUT_SIZE];
   int is_up;
   int test_count;
-  pthread_t thread; // Add thread ID to manage the thread properly
+  time_t last_up_time; // Time when the IP was last seen up
+  pthread_t thread;    // Thread ID for monitoring the IP
+  int index;           // Index for tracking in the main loop
 } IPMonitor;
 
 // Function prototypes
@@ -27,6 +30,7 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
                      IPMonitor monitors[], int ip_count);
 int ping_ip(const char *ip, char *output, size_t output_size);
 void get_current_time(char *buffer, size_t buffer_size);
+void get_time_diff(time_t past_time, char *buffer, size_t buffer_size);
 
 int main() {
   IPMonitor monitors[MAX_IPS];
@@ -53,13 +57,16 @@ int main() {
     strncpy(monitors[ip_count].ip, input, MAX_IP_LENGTH);
     monitors[ip_count].ip[MAX_IP_LENGTH - 1] = '\0'; // Ensure null-termination
     monitors[ip_count].test_count = 0;
-    monitors[ip_count].is_up = 0; // Default to DOWN
+    monitors[ip_count].is_up = 0;        // Default to DOWN
+    monitors[ip_count].last_up_time = 0; // No last up time initially
+    monitors[ip_count].index = ip_count; // Set index for tracking
     ip_count++;
   }
 
   // Initialize threads for asynchronous monitoring
   for (i = 0; i < ip_count; i++) {
     pthread_create(&monitors[i].thread, NULL, monitor_ip, &monitors[i]);
+    sleep(STAGGER_DELAY); // Stagger the start of each IP test
   }
 
   // Initialize ncurses
@@ -110,6 +117,9 @@ void *monitor_ip(void *arg) {
     // Update the IP status
     monitor->is_up = ping_ip(monitor->ip, monitor->output, MAX_OUTPUT_SIZE);
     monitor->test_count++;
+    if (monitor->is_up) {
+      monitor->last_up_time = time(NULL); // Update last up time if IP is up
+    }
     sleep(TEST_INTERVAL); // Wait before the next test
   }
 
@@ -120,6 +130,8 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
                      IPMonitor monitors[], int ip_count) {
   int i;
   char timestamp[64];
+  char last_up_buffer[64];
+  time_t current_time = time(NULL);
 
   wclear(status_win);
   wclear(output_win);
@@ -139,9 +151,20 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
       wattron(status_win, COLOR_PAIR(2) | A_BOLD); // Red color, bold
     }
 
-    mvwprintw(status_win, i + 1, 1, "%s (%d) IP %s is %s", timestamp,
-              monitors[i].test_count, monitors[i].ip,
-              monitors[i].is_up ? "UP" : "DOWN");
+    // Display last seen up time if the IP is down
+    if (!monitors[i].is_up && monitors[i].last_up_time > 0) {
+      get_time_diff(current_time - monitors[i].last_up_time, last_up_buffer,
+                    sizeof(last_up_buffer));
+      mvwprintw(status_win, i + 1, 1,
+                "%s (# of checks: %d) IP %s is DOWN (Last seen up: %s)",
+                timestamp, monitors[i].test_count, monitors[i].ip,
+                last_up_buffer);
+    } else {
+      mvwprintw(status_win, i + 1, 1, "%s (# of checks: %d) IP %s is %s",
+                timestamp, monitors[i].test_count, monitors[i].ip,
+                monitors[i].is_up ? "UP" : "DOWN");
+    }
+
     wattroff(status_win, COLOR_PAIR(1) | COLOR_PAIR(2) | A_BOLD);
   }
 
@@ -207,4 +230,13 @@ void get_current_time(char *buffer, size_t buffer_size) {
   time_t now = time(NULL);
   struct tm *tm_info = localtime(&now);
   strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", tm_info);
+}
+
+void get_time_diff(time_t diff_seconds, char *buffer, size_t buffer_size) {
+  int hours = diff_seconds / 3600;
+  int minutes = (diff_seconds % 3600) / 60;
+  int seconds = diff_seconds % 60;
+
+  snprintf(buffer, buffer_size, "%d hours, %d minutes, and %d seconds ago",
+           hours, minutes, seconds);
 }
