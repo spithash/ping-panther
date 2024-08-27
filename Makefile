@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -I/usr/include/uv -I/usr/include/ncurses -Wall -Wextra
-LDFLAGS = -luv -lncurses
+CFLAGS = -I/usr/include/ncurses -Wall -Wextra
+LDFLAGS = -lncurses
 
 all: pingpanther
 
