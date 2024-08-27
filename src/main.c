@@ -77,8 +77,10 @@ int main() {
   timeout(100); // Non-blocking input
 
   start_color();
-  init_pair(1, COLOR_GREEN, COLOR_BLACK); // UP status color
-  init_pair(2, COLOR_RED, COLOR_BLACK);   // DOWN status color
+  init_pair(1, COLOR_GREEN, COLOR_BLACK);  // UP status color
+  init_pair(2, COLOR_RED, COLOR_BLACK);    // DOWN status color
+  init_pair(3, COLOR_YELLOW, COLOR_BLACK); // Yellow for ping output
+  init_pair(4, COLOR_CYAN, COLOR_BLACK);   // Cyan for ping output details
 
   int height, width;
   getmaxyx(stdscr, height, width); // Get terminal size
@@ -97,6 +99,12 @@ int main() {
     display_results(status_win, output_win, monitors, ip_count);
     sleep(REFRESH_INTERVAL); // Wait for a while before updating
   }
+
+  // Display termination message
+  clear();
+  mvprintw(LINES / 2, COLS / 2 - 10, "Terminating...");
+  refresh();
+  sleep(2); // Show the termination message for 2 seconds
 
   // Join threads and cleanup ncurses
   for (i = 0; i < ip_count; i++) {
@@ -159,19 +167,27 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
     // Lock mutex to safely access monitor data
     pthread_mutex_lock(&monitors[i].mutex);
 
-    // Display last seen up time if the IP is down
-    if (!monitors[i].is_up && monitors[i].last_up_time > 0) {
-      get_time_diff(time(NULL) - monitors[i].last_up_time, last_up_buffer,
-                    sizeof(last_up_buffer));
-      mvwprintw(status_win, i + 1, 1,
-                "%s (# of checks: %d) IP %s is DOWN (Last seen up: %s)",
-                timestamp, monitors[i].test_count, monitors[i].ip,
-                last_up_buffer);
+    // Display status
+    if (monitors[i].is_up) {
+      wattron(status_win, COLOR_PAIR(1)); // Green color
+      mvwprintw(status_win, i + 1, 1, "%s (# of checks: %d) IP %s is UP",
+                timestamp, monitors[i].test_count, monitors[i].ip);
     } else {
-      mvwprintw(status_win, i + 1, 1, "%s (# of checks: %d) IP %s is %s",
-                timestamp, monitors[i].test_count, monitors[i].ip,
-                monitors[i].is_up ? "UP" : "DOWN");
+      wattron(status_win, COLOR_PAIR(2) | A_BOLD); // Red color, bold
+      if (monitors[i].last_up_time > 0) {
+        get_time_diff(time(NULL) - monitors[i].last_up_time, last_up_buffer,
+                      sizeof(last_up_buffer));
+        mvwprintw(status_win, i + 1, 1,
+                  "%s (# of checks: %d) IP %s is DOWN (Last seen up: %s)",
+                  timestamp, monitors[i].test_count, monitors[i].ip,
+                  last_up_buffer);
+      } else {
+        mvwprintw(status_win, i + 1, 1,
+                  "%s (# of checks: %d) IP %s is DOWN (Never seen up)",
+                  timestamp, monitors[i].test_count, monitors[i].ip);
+      }
     }
+    wattroff(status_win, COLOR_PAIR(1) | COLOR_PAIR(2) | A_BOLD);
 
     pthread_mutex_unlock(&monitors[i].mutex); // Unlock mutex
   }
@@ -185,8 +201,16 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
     char ip_timestamp[64];
     pthread_mutex_lock(&monitors[i].mutex);
     get_current_time(ip_timestamp, sizeof(ip_timestamp));
+
+    if (monitors[i].is_up) {
+      wattron(output_win, COLOR_PAIR(3)); // Yellow color for the title
+    } else {
+      wattron(output_win, COLOR_PAIR(4)); // Cyan color for details
+    }
     mvwprintw(output_win, line, 1, "%s - IP %s:\n%s", ip_timestamp,
               monitors[i].ip, monitors[i].output);
+    wattroff(output_win, COLOR_PAIR(3) | COLOR_PAIR(4));
+
     line += PING_COUNT +
             2; // Move down by number of lines in ping output + some extra space
     pthread_mutex_unlock(&monitors[i].mutex);
