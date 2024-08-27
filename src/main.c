@@ -18,6 +18,7 @@ typedef struct {
   char output[MAX_OUTPUT_SIZE];
   int is_up;
   int test_count;
+  pthread_t thread; // Add thread ID to manage the thread properly
 } IPMonitor;
 
 // Function prototypes
@@ -57,9 +58,8 @@ int main() {
   }
 
   // Initialize threads for asynchronous monitoring
-  pthread_t threads[ip_count];
   for (i = 0; i < ip_count; i++) {
-    pthread_create(&threads[i], NULL, monitor_ip, &monitors[i]);
+    pthread_create(&monitors[i].thread, NULL, monitor_ip, &monitors[i]);
   }
 
   // Initialize ncurses
@@ -84,14 +84,16 @@ int main() {
   mvwprintw(output_win, 0, 1, "Ping Output");
 
   // Main loop to display results and update every REFRESH_INTERVAL seconds
-  while (1) {
+  int ch;
+  while ((ch = wgetch(stdscr)) != 'q') {
     display_results(status_win, output_win, monitors, ip_count);
     sleep(REFRESH_INTERVAL); // Wait for a while before updating
   }
 
   // Join threads and cleanup ncurses
   for (i = 0; i < ip_count; i++) {
-    pthread_join(threads[i], NULL);
+    pthread_cancel(monitors[i].thread);     // Cancel the thread
+    pthread_join(monitors[i].thread, NULL); // Ensure thread termination
   }
 
   delwin(status_win);
