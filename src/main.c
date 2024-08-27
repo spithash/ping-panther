@@ -6,12 +6,13 @@
 #include <time.h>
 #include <unistd.h>
 
-#define MAX_IPS 100
-#define MAX_IP_LENGTH 16
-#define REFRESH_INTERVAL 5 // Time in seconds between updates
-#define PING_COUNT 3       // Number of ping packets
-#define MAX_OUTPUT_SIZE 1024
-#define TEST_INTERVAL 10 // Interval in seconds for each IP test
+#define MAX_IPS 100 // Set maximum ips allowed
+#define MAX_IP_LENGTH                                                          \
+  16 // Maximum length of the IP address string (e.g., 255.255.255.255 is 16)
+#define REFRESH_INTERVAL 5   // Time in seconds between updates
+#define PING_COUNT 3         // Number of ping packets
+#define MAX_OUTPUT_SIZE 1024 // Maximum size of the buffer
+#define TEST_INTERVAL 10     // Interval in seconds for each IP test
 
 typedef struct {
   char ip[MAX_IP_LENGTH];
