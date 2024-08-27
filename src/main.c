@@ -1,4 +1,5 @@
 #include <ncurses.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,15 +10,25 @@
 #define MAX_IP_LENGTH 16
 #define REFRESH_INTERVAL 5 // Time in seconds between updates
 #define PING_COUNT 3       // Number of ping packets
+#define MAX_OUTPUT_SIZE 1024
+#define TEST_INTERVAL 3 // Interval in seconds for each IP test
+
+typedef struct {
+  char ip[MAX_IP_LENGTH];
+  char output[MAX_OUTPUT_SIZE];
+  int is_up;
+  int test_count;
+} IPMonitor;
 
 // Function prototypes
-void display_results(WINDOW *status_win, WINDOW *output_win, char *ips[],
-                     int ip_count, int test_counts[]);
+void *monitor_ip(void *arg);
+void display_results(WINDOW *status_win, WINDOW *output_win,
+                     IPMonitor monitors[], int ip_count);
 int ping_ip(const char *ip, char *output, size_t output_size);
 void get_current_time(char *buffer, size_t buffer_size);
 
 int main() {
-  char *ips[MAX_IPS];
+  IPMonitor monitors[MAX_IPS];
   int ip_count = 0;
   char input[MAX_IP_LENGTH];
   int i;
@@ -38,18 +49,28 @@ int main() {
       break;
     }
 
-    ips[ip_count] = strdup(input);
+    strncpy(monitors[ip_count].ip, input, MAX_IP_LENGTH);
+    monitors[ip_count].ip[MAX_IP_LENGTH - 1] = '\0'; // Ensure null-termination
+    monitors[ip_count].test_count = 0;
+    monitors[ip_count].is_up = 0; // Default to DOWN
     ip_count++;
   }
 
-  // Initialize test counts
-  int test_counts[MAX_IPS] = {0};
+  // Initialize threads for asynchronous monitoring
+  pthread_t threads[ip_count];
+  for (i = 0; i < ip_count; i++) {
+    pthread_create(&threads[i], NULL, monitor_ip, &monitors[i]);
+  }
 
   // Initialize ncurses
   initscr();
   cbreak();
   noecho();
   timeout(100); // Non-blocking input
+
+  start_color();
+  init_pair(1, COLOR_GREEN, COLOR_BLACK); // UP status color
+  init_pair(2, COLOR_RED, COLOR_BLACK);   // DOWN status color
 
   int height, width;
   getmaxyx(stdscr, height, width); // Get terminal size
@@ -60,27 +81,38 @@ int main() {
 
   // Main loop to display results and update every REFRESH_INTERVAL seconds
   while (1) {
-    display_results(status_win, output_win, ips, ip_count, test_counts);
+    display_results(status_win, output_win, monitors, ip_count);
     sleep(REFRESH_INTERVAL); // Wait for a while before updating
   }
 
-  // Cleanup ncurses
+  // Join threads and cleanup ncurses
+  for (i = 0; i < ip_count; i++) {
+    pthread_join(threads[i], NULL);
+  }
+
   delwin(status_win);
   delwin(output_win);
   endwin();
 
-  // Free allocated memory
-  for (i = 0; i < ip_count; i++) {
-    free(ips[i]);
-  }
-
   return 0;
 }
 
-void display_results(WINDOW *status_win, WINDOW *output_win, char *ips[],
-                     int ip_count, int test_counts[]) {
+void *monitor_ip(void *arg) {
+  IPMonitor *monitor = (IPMonitor *)arg;
+
+  while (1) {
+    // Update the IP status
+    monitor->is_up = ping_ip(monitor->ip, monitor->output, MAX_OUTPUT_SIZE);
+    monitor->test_count++;
+    sleep(TEST_INTERVAL); // Wait before the next test
+  }
+
+  return NULL;
+}
+
+void display_results(WINDOW *status_win, WINDOW *output_win,
+                     IPMonitor monitors[], int ip_count) {
   int i;
-  char output[1024];
   char timestamp[64];
 
   wclear(status_win);
@@ -90,23 +122,28 @@ void display_results(WINDOW *status_win, WINDOW *output_win, char *ips[],
 
   // Print IP status
   for (i = 0; i < ip_count; i++) {
-    int status = ping_ip(ips[i], output, sizeof(output));
     get_current_time(timestamp, sizeof(timestamp));
+
+    if (monitors[i].is_up) {
+      wattron(status_win, COLOR_PAIR(1)); // Green color
+    } else {
+      wattron(status_win, COLOR_PAIR(2) | A_BOLD); // Red color, bold
+    }
+
     mvwprintw(status_win, i + 1, 1, "%s (%d) IP %s is %s", timestamp,
-              test_counts[i], ips[i], status ? "UP" : "DOWN");
-    test_counts[i]++;
+              monitors[i].test_count, monitors[i].ip,
+              monitors[i].is_up ? "UP" : "DOWN");
+    wattroff(status_win, COLOR_PAIR(1) | COLOR_PAIR(2) | A_BOLD);
   }
 
   // Display ping output with timestamp
   mvwprintw(output_win, 0, 1, "Ping Output:");
   int line = 1;
   for (i = 0; i < ip_count; i++) {
-    char ip_output[1024];
     char ip_timestamp[64];
     get_current_time(ip_timestamp, sizeof(ip_timestamp));
-    ping_ip(ips[i], ip_output, sizeof(ip_output));
-    mvwprintw(output_win, line, 1, "%s - IP %s:\n%s", ip_timestamp, ips[i],
-              ip_output);
+    mvwprintw(output_win, line, 1, "%s - IP %s:\n%s", ip_timestamp,
+              monitors[i].ip, monitors[i].output);
     line += PING_COUNT +
             2; // Move down by number of lines in ping output + some extra space
   }
@@ -117,7 +154,7 @@ void display_results(WINDOW *status_win, WINDOW *output_win, char *ips[],
 
 int ping_ip(const char *ip, char *output, size_t output_size) {
   char cmd[64];
-  snprintf(cmd, sizeof(cmd), "ping -c %d -W 1 %s", PING_COUNT, ip);
+  snprintf(cmd, sizeof(cmd), "ping -c %d -W 1 %s 2>/dev/null", PING_COUNT, ip);
 
   FILE *fp = popen(cmd, "r");
   if (fp == NULL) {
