@@ -49,18 +49,6 @@ void ping_ip(uv_timer_t *timer) {
   } else {
     printf("IP %s is DOWN\n", ip_data->ip);
   }
-
-  // Optionally log to a file for later analysis
-  FILE *logfile = fopen("pingpanther.log", "a");
-  if (logfile) {
-    fprintf(logfile, "IP %s is %s\n", ip_data->ip, success ? "UP" : "DOWN");
-    fclose(logfile);
-  }
-}
-
-void on_timer(uv_timer_t *handle) {
-  ip_status_t *ip_data = (ip_status_t *)handle->data;
-  uv_timer_start(&ip_data->timer, ping_ip, 0, 10000); // Ping every 10 seconds
 }
 
 int main() {
@@ -108,3 +96,4 @@ int main() {
   free(ip_data);
   return 0;
 }
+
