@@ -6,9 +6,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#define MAX_IPS 100 // Set maximum ips allowed
-#define MAX_IP_LENGTH                                                          \
-  16 // Maximum length of the IP address string (e.g., 255.255.255.255 is 16)
+#define MAX_IPS 100          // Set maximum IPs allowed
+#define MAX_IP_LENGTH 16     // Maximum length of the IP address string
 #define REFRESH_INTERVAL 5   // Time in seconds between updates
 #define PING_COUNT 3         // Number of ping packets
 #define MAX_OUTPUT_SIZE 1024 // Maximum size of the buffer
@@ -32,38 +31,41 @@ void display_results(WINDOW *status_win, WINDOW *output_win,
 int ping_ip(const char *ip, char *output, size_t output_size);
 void get_current_time(char *buffer, size_t buffer_size);
 void get_time_diff(time_t diff_seconds, char *buffer, size_t buffer_size);
+void print_usage(const char *program_name);
 
-int main() {
+int main(int argc, char *argv[]) {
   IPMonitor monitors[MAX_IPS];
   int ip_count = 0;
-  char input[MAX_IP_LENGTH];
   int i;
 
-  // Initialize IP list
-  printf("Enter IP addresses (type 'done' to finish):\n");
-  while (1) {
-    printf("IP: ");
-    fgets(input, sizeof(input), stdin);
-    input[strcspn(input, "\n")] = '\0'; // Remove newline character
+  // Check if user requested help
+  if (argc == 2 && strcmp(argv[1], "--help") == 0) {
+    print_usage(argv[0]);
+    return 0;
+  }
 
-    if (strcmp(input, "done") == 0) {
-      break;
+  // Parse IP addresses from command-line arguments
+  if (argc > 1 && strcmp(argv[1], "--ips") == 0) {
+    for (i = 2; i < argc; i++) {
+      if (ip_count >= MAX_IPS) {
+        printf("Maximum number of IPs reached.\n");
+        break;
+      }
+
+      strncpy(monitors[ip_count].ip, argv[i], MAX_IP_LENGTH);
+      monitors[ip_count].ip[MAX_IP_LENGTH - 1] =
+          '\0'; // Ensure null-termination
+      monitors[ip_count].test_count = 0;
+      monitors[ip_count].is_up = 0;        // Default to DOWN
+      monitors[ip_count].last_up_time = 0; // No last up time initially
+      monitors[ip_count].last_check_time =
+          time(NULL); // Set last check time to now
+      pthread_mutex_init(&monitors[ip_count].mutex, NULL); // Initialize mutex
+      ip_count++;
     }
-
-    if (ip_count >= MAX_IPS) {
-      printf("Maximum number of IPs reached.\n");
-      break;
-    }
-
-    strncpy(monitors[ip_count].ip, input, MAX_IP_LENGTH);
-    monitors[ip_count].ip[MAX_IP_LENGTH - 1] = '\0'; // Ensure null-termination
-    monitors[ip_count].test_count = 0;
-    monitors[ip_count].is_up = 0;        // Default to DOWN
-    monitors[ip_count].last_up_time = 0; // No last up time initially
-    monitors[ip_count].last_check_time =
-        time(NULL); // Set last check time to now
-    pthread_mutex_init(&monitors[ip_count].mutex, NULL); // Initialize mutex
-    ip_count++;
+  } else {
+    print_usage(argv[0]);
+    return 1;
   }
 
   // Initialize threads for asynchronous monitoring
@@ -275,3 +277,12 @@ void get_time_diff(time_t diff_seconds, char *buffer, size_t buffer_size) {
   snprintf(buffer, buffer_size, "%d hours, %d minutes, and %d seconds ago",
            hours, minutes, seconds);
 }
+
+void print_usage(const char *program_name) {
+  printf("Usage: %s --ips <ip1> <ip2> ... <ipN>\n", program_name);
+  printf("Options:\n");
+  printf("  --ips       IP addresses to monitor one by one separated by spaces "
+         "(eg: 192.168.1.0 192.168.1.2)\n");
+  printf("  --help      Display this help message\n");
+}
+
