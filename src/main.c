@@ -279,10 +279,9 @@ void get_time_diff(time_t diff_seconds, char *buffer, size_t buffer_size) {
 }
 
 void print_usage(const char *program_name) {
-  printf("Usage: %s --ips <ip1> <ip2> ... <ipN>\n", program_name);
+  printf("Usage: %s --ips <ip1> <ip2> \n", program_name);
   printf("Options:\n");
   printf("  --ips       IP addresses to monitor one by one separated by spaces "
          "(eg: 192.168.1.0 192.168.1.2)\n");
   printf("  --help      Display this help message\n");
 }
-
